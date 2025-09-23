@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:travel/screens/hotel/hotel_screen.dart';
-import 'package:travel/screens/restaurant/restaurant_screen.dart';
+// import 'package:travel/screens/carrental/carrental_screen.dart';
+import 'package:travel/screens/home_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -14,8 +14,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-
-      home: RestaurantScreen(),
+      home: HomeScreen(),
     );
   }
 }
