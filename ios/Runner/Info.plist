@@ -24,6 +24,11 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+  <!-- Location usage descriptions for geolocator -->
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>This app needs your location to show your position on the map and provide directions within Egypt.</string>
+  <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+  <string>Location access helps provide accurate directions and nearby places.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
