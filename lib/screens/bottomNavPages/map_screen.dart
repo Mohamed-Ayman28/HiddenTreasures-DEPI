@@ -20,7 +20,8 @@ class _MapScreenState extends State<MapScreen> {
   final TextEditingController _placeSearchController = TextEditingController();
 
   // Cairo default center
-  LatLng _currentCenter = const LatLng(30.033333, 31.233334);
+  static const LatLng _cairoCenter = LatLng(30.033333, 31.233334);
+  LatLng _currentCenter = _cairoCenter;
   LatLng? _currentLocation;
   LatLng? _startPoint;
   LatLng? _endPoint;
@@ -38,6 +39,8 @@ class _MapScreenState extends State<MapScreen> {
     const LatLng(21.7, 24.7),
     const LatLng(31.7, 36.9),
   );
+
+  bool _isInEgypt(LatLng point) => _egyptBounds.contains(point);
 
   @override
   void initState() {
@@ -96,20 +99,24 @@ class _MapScreenState extends State<MapScreen> {
 
       setState(() {
         _currentLocation = userLatLng;
-        _currentCenter = userLatLng;
+        _currentCenter = _isInEgypt(userLatLng) ? userLatLng : _cairoCenter;
+        if (!_isInEgypt(userLatLng)) {
+          _showMessage('Current location is outside Egypt. Centering on Cairo.');
+        }
         _markers = [
-          Marker(
-            width: 80,
-            height: 80,
-            point: userLatLng,
-            builder: (ctx) => Container(
-              decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.3),
-                shape: BoxShape.circle,
+          if (_isInEgypt(userLatLng))
+            Marker(
+              width: 80,
+              height: 80,
+              point: userLatLng,
+              builder: (ctx) => Container(
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.3),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.my_location, size: 40, color: Colors.blue),
               ),
-              child: const Icon(Icons.my_location, size: 40, color: Colors.blue),
             ),
-          ),
         ];
         _isLoadingLocation = false;
       });
@@ -167,6 +174,16 @@ class _MapScreenState extends State<MapScreen> {
     }
     if (_endPoint == null && _endController.text.trim().isNotEmpty) {
       _endPoint = await _searchLocation(_endController.text.trim());
+    }
+
+    // Validate bounds (Egypt only)
+    if (_startPoint != null && !_isInEgypt(_startPoint!)) {
+      _showMessage('Start point is outside Egypt. Using Cairo instead.');
+      _startPoint = _cairoCenter;
+    }
+    if (_endPoint != null && !_isInEgypt(_endPoint!)) {
+      _showMessage('End point is outside Egypt. Using Cairo instead.');
+      _endPoint = _cairoCenter;
     }
 
     if (_startPoint == null || _endPoint == null) {
@@ -286,10 +303,14 @@ class _MapScreenState extends State<MapScreen> {
 
   void _useCurrentLocationAsStart() {
     if (_currentLocation != null) {
+      final LatLng start = _isInEgypt(_currentLocation!) ? _currentLocation! : _cairoCenter;
       setState(() {
-        _startPoint = _currentLocation;
-        _startController.text = 'Current Location';
+        _startPoint = start;
+        _startController.text = _isInEgypt(_currentLocation!) ? 'Current Location' : 'Cairo';
       });
+      if (!_isInEgypt(_currentLocation!)) {
+        _showMessage('Current location outside Egypt. Using Cairo as start.');
+      }
       _showMessage('Using current location as start point');
     } else {
       _showMessage('Current location not available. Please wait...');
