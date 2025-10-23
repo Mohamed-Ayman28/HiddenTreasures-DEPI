@@ -42,6 +42,32 @@ class _MapScreenState extends State<MapScreen> {
 
   bool _isInEgypt(LatLng point) => _egyptBounds.contains(point);
 
+  LatLngBounds _safeBoundsFromPoints(List<LatLng> points) {
+    if (points.isEmpty) {
+      return LatLngBounds(_cairoCenter, _cairoCenter);
+    }
+    double minLat = 90, minLng = 180, maxLat = -90, maxLng = -180;
+    for (final p in points) {
+      if (p.latitude.isNaN || p.longitude.isNaN) continue;
+      if (p.latitude < minLat) minLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.latitude > maxLat) maxLat = p.latitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
+    }
+    if (minLat > maxLat || minLng > maxLng) {
+      return LatLngBounds(_cairoCenter, _cairoCenter);
+    }
+    // Expand degenerate bounds slightly to avoid zero-size fit causing blank map
+    const double epsilon = 0.0005;
+    if ((maxLat - minLat).abs() < epsilon && (maxLng - minLng).abs() < epsilon) {
+      minLat -= epsilon;
+      minLng -= epsilon;
+      maxLat += epsilon;
+      maxLng += epsilon;
+    }
+    return LatLngBounds(LatLng(minLat, minLng), LatLng(maxLat, maxLng));
+  }
+
   @override
   void initState() {
     super.initState();
@@ -257,7 +283,7 @@ class _MapScreenState extends State<MapScreen> {
           await Future.delayed(const Duration(milliseconds: 200));
           if (mounted && _mapReady && _routePoints.isNotEmpty) {
             try {
-              final LatLngBounds bounds = LatLngBounds.fromPoints(_routePoints);
+              final LatLngBounds bounds = _safeBoundsFromPoints(_routePoints);
               _mapController.fitBounds(
                 bounds,
                 options: const FitBoundsOptions(padding: EdgeInsets.all(50)),
