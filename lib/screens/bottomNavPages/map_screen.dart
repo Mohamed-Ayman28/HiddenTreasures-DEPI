@@ -18,7 +18,7 @@ class _MapScreenState extends State<MapScreen> {
   final TextEditingController _startController = TextEditingController();
   final TextEditingController _endController = TextEditingController();
 
-  // Cairo default
+  // Cairo default center
   LatLng _currentCenter = const LatLng(30.033333, 31.233334);
   LatLng? _currentLocation;
   LatLng? _startPoint;
@@ -32,6 +32,9 @@ class _MapScreenState extends State<MapScreen> {
   String? _duration;
   bool _mapReady = false;
 
+  static const LatLng _egyptSouthWest = LatLng(21.725, 24.700); // Rough bounds
+  static const LatLng _egyptNorthEast = LatLng(31.833, 36.900);
+
   @override
   void initState() {
     super.initState();
@@ -40,65 +43,41 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
-  // Approximate Egypt bounding box
-  bool _isWithinEgypt(LatLng point) {
-    const double minLat = 22.0;
-    const double maxLat = 31.7;
-    const double minLon = 24.7;
-    const double maxLon = 36.9;
-    return point.latitude >= minLat &&
-        point.latitude <= maxLat &&
-        point.longitude >= minLon &&
-        point.longitude <= maxLon;
+  bool _isInEgypt(LatLng p) {
+    return p.latitude >= _egyptSouthWest.latitude &&
+        p.latitude <= _egyptNorthEast.latitude &&
+        p.longitude >= _egyptSouthWest.longitude &&
+        p.longitude <= _egyptNorthEast.longitude;
   }
 
   Future<bool> _handleLocationPermission() async {
-    bool serviceEnabled;
-    LocationPermission permission;
-
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      if (mounted) {
-        _showMessage('Location services are disabled. Please enable them.');
-      }
+      _showMessage('Location services are disabled. Please enable them.');
       return false;
     }
-
-    permission = await Geolocator.checkPermission();
+    LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
-        if (mounted) {
-          _showMessage('Location permissions are denied');
-        }
+        _showMessage('Location permissions are denied');
         return false;
       }
     }
-
     if (permission == LocationPermission.deniedForever) {
-      if (mounted) {
-        _showMessage(
-          'Location permissions are permanently denied. Please enable them in settings.',
-        );
-      }
+      _showMessage('Location permissions are permanently denied in settings.');
       return false;
     }
-
     return true;
   }
 
   Future<void> _getCurrentLocation() async {
     if (!mounted) return;
-
     setState(() => _isLoadingLocation = true);
-
     try {
       final hasPermission = await _handleLocationPermission();
-
       if (!hasPermission) {
-        if (mounted) {
-          setState(() => _isLoadingLocation = false);
-        }
+        setState(() => _isLoadingLocation = false);
         return;
       }
 
@@ -107,97 +86,76 @@ class _MapScreenState extends State<MapScreen> {
         timeLimit: const Duration(seconds: 10),
       ).timeout(
         const Duration(seconds: 10),
-        onTimeout: () {
-          throw Exception('Location request timed out');
-        },
+        onTimeout: () => throw Exception('Location request timed out'),
       );
 
+      LatLng detected = LatLng(position.latitude, position.longitude);
+      if (!_isInEgypt(detected)) {
+        // If detected outside Egypt (emulator mock), fall back to Cairo
+        detected = const LatLng(30.033333, 31.233334);
+      }
+
       if (!mounted) return;
-
-      final LatLng detected = LatLng(position.latitude, position.longitude);
-      final LatLng effective = _isWithinEgypt(detected)
-          ? detected
-          : const LatLng(30.033333, 31.233334); // Fallback Cairo
-
       setState(() {
-        _currentLocation = effective;
-        _currentCenter = effective;
+        _currentLocation = detected;
+        _currentCenter = detected;
         _markers = [
           Marker(
             width: 80,
             height: 80,
-            point: effective,
+            point: detected,
             builder: (ctx) => Container(
               decoration: BoxDecoration(
                 color: Colors.blue.withOpacity(0.3),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
-                Icons.my_location,
-                size: 40,
-                color: Colors.blue,
-              ),
+              child: const Icon(Icons.my_location, size: 40, color: Colors.blue),
             ),
           ),
         ];
         _isLoadingLocation = false;
       });
 
-      if (!_isWithinEgypt(detected)) {
-        _showMessage('Current location outside Egypt. Using Cairo.');
-      }
-
       await Future.delayed(const Duration(milliseconds: 300));
       if (mounted && _mapReady) {
         try {
           _mapController.move(_currentCenter, 15.0);
-        } catch (e) {
-          debugPrint('Map move error: $e');
-        }
+        } catch (_) {}
       }
     } catch (e) {
-      debugPrint('Location error: $e');
-      if (mounted) {
-        _showMessage('Failed to get location. Please try again.');
-        setState(() => _isLoadingLocation = false);
-      }
+      _showMessage('Failed to get location. Please try again.');
+      if (mounted) setState(() => _isLoadingLocation = false);
     }
   }
 
   Future<LatLng?> _searchLocation(String query) async {
-    if (query.trim().isEmpty) return null;
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return null;
 
-    // Restrict to Egypt via country code and a small limit
-    final Uri url = Uri.parse(
-      'https://nominatim.openstreetmap.org/search'
-      '?q=${Uri.encodeComponent(query)}'
-      '&format=jsonv2&limit=1&countrycodes=eg',
+    // Restrict search to Egypt by adding country filter
+    final encodedQuery = Uri.encodeQueryComponent('$trimmed, Egypt');
+    final url = Uri.parse(
+      'https://nominatim.openstreetmap.org/search?country=Egypt&q=$encodedQuery&format=json&limit=1',
     );
-
     try {
-      final response = await http
-          .get(
-            url,
-            headers: const {
-              'User-Agent': 'HiddenTreasures/1.0 (contact: your_email@gmail.com)',
-            },
-          )
-          .timeout(const Duration(seconds: 10));
+      final response = await http.get(
+        url,
+        headers: const {
+          'User-Agent': 'HiddenTreasures/1.0 (contact: example@example.com)',
+        },
+      ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
-        final List<dynamic> data = jsonDecode(response.body) as List<dynamic>;
+        final List data = jsonDecode(response.body) as List;
         if (data.isNotEmpty) {
-          final double lat = double.parse('${data[0]['lat']}');
-          final double lon = double.parse('${data[0]['lon']}');
-          final LatLng point = LatLng(lat, lon);
-          if (_isWithinEgypt(point)) return point;
+          final lat = double.parse(data[0]['lat']);
+          final lon = double.parse(data[0]['lon']);
+          final candidate = LatLng(lat, lon);
+          if (_isInEgypt(candidate)) return candidate;
         }
       }
-    } catch (e) {
-      debugPrint('Search error: $e');
-      if (mounted) {
-        _showMessage('Search failed. Please try again.');
-      }
+    } catch (_) {
+      _showMessage('Search failed. Please try again.');
     }
     return null;
   }
@@ -207,11 +165,10 @@ class _MapScreenState extends State<MapScreen> {
       _showMessage('Please set both start and end points');
       return;
     }
-
     if (!mounted) return;
     setState(() => _isLoadingRoute = true);
 
-    final Uri url = Uri.parse(
+    final url = Uri.parse(
       'https://router.project-osrm.org/route/v1/driving/'
       '${_startPoint!.longitude},${_startPoint!.latitude};'
       '${_endPoint!.longitude},${_endPoint!.latitude}'
@@ -220,53 +177,34 @@ class _MapScreenState extends State<MapScreen> {
 
     try {
       final response = await http.get(url).timeout(const Duration(seconds: 15));
-
       if (response.statusCode == 200) {
-        final Map<String, dynamic> data =
-            jsonDecode(response.body) as Map<String, dynamic>;
-
-        if (data['routes'] != null && (data['routes'] as List).isNotEmpty) {
-          final Map<String, dynamic> route =
-              (data['routes'] as List).first as Map<String, dynamic>;
-          final List<dynamic> coordinates =
-              (route['geometry'] as Map<String, dynamic>)['coordinates']
-                  as List<dynamic>;
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final routes = data['routes'] as List<dynamic>?;
+        if (routes != null && routes.isNotEmpty) {
+          final route = routes.first as Map<String, dynamic>;
+          final coordinates = (route['geometry']['coordinates'] as List)
+              .map((coord) => LatLng(coord[1].toDouble(), coord[0].toDouble()))
+              .toList();
 
           if (!mounted) return;
-
           setState(() {
-            _routePoints = coordinates
-                .map(
-                  (coord) => LatLng(
-                    (coord as List)[1].toDouble(),
-                    coord[0].toDouble(),
-                  ),
-                )
-                .toList();
-
+            _routePoints = coordinates;
             _distance = '${(route['distance'] / 1000).toStringAsFixed(2)} km';
             _duration = '${(route['duration'] / 60).toStringAsFixed(0)} min';
-
             _markers = [
               Marker(
                 width: 80,
                 height: 80,
                 point: _startPoint!,
-                builder: (ctx) => const Icon(
-                  Icons.location_on,
-                  size: 40,
-                  color: Colors.green,
-                ),
+                builder: (ctx) => const Icon(Icons.location_on, size: 40, color: Colors.green),
               ),
               Marker(
                 width: 80,
                 height: 80,
                 point: _endPoint!,
-                builder: (ctx) =>
-                    const Icon(Icons.location_on, size: 40, color: Colors.red),
+                builder: (ctx) => const Icon(Icons.location_on, size: 40, color: Colors.red),
               ),
             ];
-
             _isLoadingRoute = false;
           });
 
@@ -278,56 +216,43 @@ class _MapScreenState extends State<MapScreen> {
                 bounds,
                 options: const FitBoundsOptions(padding: EdgeInsets.all(50)),
               );
-            } catch (e) {
-              debugPrint('Fit bounds error: $e');
-            }
+            } catch (_) {}
           }
         } else {
-          if (mounted) {
-            _showMessage('No route found');
-            setState(() => _isLoadingRoute = false);
-          }
+          _showMessage('No route found');
+          if (mounted) setState(() => _isLoadingRoute = false);
         }
       } else {
-        if (mounted) {
-          _showMessage('Failed to get directions');
-          setState(() => _isLoadingRoute = false);
-        }
+        _showMessage('Failed to get directions');
+        if (mounted) setState(() => _isLoadingRoute = false);
       }
-    } catch (e) {
-      debugPrint('Directions error: $e');
-      if (mounted) {
-        _showMessage('Failed to get directions. Please try again.');
-        setState(() => _isLoadingRoute = false);
-      }
+    } catch (_) {
+      _showMessage('Failed to get directions. Please try again.');
+      if (mounted) setState(() => _isLoadingRoute = false);
     }
   }
 
   Future<void> _setStartPoint() async {
-    final LatLng? location = await _searchLocation(_startController.text);
+    final location = await _searchLocation(_startController.text);
     if (location != null) {
-      if (mounted) {
-        setState(() {
-          _startPoint = location;
-        });
-        _showMessage('Start point set');
-      }
+      if (!mounted) return;
+      setState(() => _startPoint = location);
+      _showMessage('Start point set');
+      if (_endPoint != null) _getDirections();
     } else {
-      _showMessage('Location not found');
+      _showMessage('Start location not found in Egypt');
     }
   }
 
   Future<void> _setEndPoint() async {
-    final LatLng? location = await _searchLocation(_endController.text);
+    final location = await _searchLocation(_endController.text);
     if (location != null) {
-      if (mounted) {
-        setState(() {
-          _endPoint = location;
-        });
-        _showMessage('End point set');
-      }
+      if (!mounted) return;
+      setState(() => _endPoint = location);
+      _showMessage('End point set');
+      if (_startPoint != null) _getDirections();
     } else {
-      _showMessage('Location not found');
+      _showMessage('End location not found in Egypt');
     }
   }
 
@@ -337,22 +262,12 @@ class _MapScreenState extends State<MapScreen> {
         _startPoint = _currentLocation;
         _startController.text = 'Current Location';
       });
-      _showMessage('Using current location as start point');
+      _showMessage('Using current location as start');
+      if (_endPoint != null) _getDirections();
     } else {
       _showMessage('Current location not available. Please wait...');
       _getCurrentLocation();
     }
-  }
-
-  void _showMessage(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        duration: const Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
   }
 
   void _clearRoute() {
@@ -375,11 +290,7 @@ class _MapScreenState extends State<MapScreen> {
                     color: Colors.blue.withOpacity(0.3),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
-                    Icons.my_location,
-                    size: 40,
-                    color: Colors.blue,
-                  ),
+                  child: const Icon(Icons.my_location, size: 40, color: Colors.blue),
                 ),
               ),
             ]
@@ -399,13 +310,11 @@ class _MapScreenState extends State<MapScreen> {
       ),
       body: Stack(
         children: [
-          // Map
           FlutterMap(
             mapController: _mapController,
             options: MapOptions(
-              // Using initial* naming keeps compatibility with recent flutter_map
-              initialCenter: _currentCenter,
-              initialZoom: 13.0,
+              center: _currentCenter,
+              zoom: 13.0,
               minZoom: 3.0,
               maxZoom: 18.0,
               onMapReady: () {
@@ -414,26 +323,21 @@ class _MapScreenState extends State<MapScreen> {
             ),
             children: [
               TileLayer(
-                urlTemplate:
-                    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                 subdomains: const ['a', 'b', 'c'],
                 userAgentPackageName: 'com.hiddentreasures.app',
               ),
               if (_routePoints.isNotEmpty)
                 PolylineLayer(
                   polylines: [
-                    Polyline(
-                      points: _routePoints,
-                      strokeWidth: 4.0,
-                      color: Colors.blue,
-                    ),
+                    Polyline(points: _routePoints, strokeWidth: 4.0, color: Colors.blue),
                   ],
                 ),
               MarkerLayer(markers: _markers),
             ],
           ),
 
-          // Direction/search panel
+          // Direction panel
           Positioned(
             top: 0,
             left: 0,
@@ -453,110 +357,74 @@ class _MapScreenState extends State<MapScreen> {
               ),
               child: Column(
                 children: [
-                  // Start location
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                     child: Row(
                       children: [
-                        const Icon(
-                          Icons.trip_origin,
-                          color: Colors.green,
-                          size: 20,
-                        ),
+                        const Icon(Icons.trip_origin, color: Colors.green, size: 20),
                         const SizedBox(width: 8),
                         Expanded(
                           child: TextField(
                             controller: _startController,
                             decoration: InputDecoration(
-                              hintText: 'Start location (Egypt only)',
+                              hintText: 'Start location',
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: BorderSide.none,
                               ),
                               filled: true,
                               fillColor: Colors.grey[100],
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
-                              ),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                               isDense: true,
                             ),
                             onSubmitted: (_) => _setStartPoint(),
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(
-                            Icons.search,
-                            color: Colors.deepOrange,
-                          ),
+                          icon: const Icon(Icons.search, color: Colors.green),
+                          onPressed: _setStartPoint,
                           tooltip: 'Search start',
-                          onPressed: () async {
-                            await _setStartPoint();
-                            if (_startPoint != null && _endPoint != null) {
-                              await _getDirections();
-                            }
-                          },
                         ),
                         IconButton(
-                          icon: const Icon(
-                            Icons.my_location,
-                            color: Colors.blue,
-                          ),
+                          icon: const Icon(Icons.my_location, color: Colors.blue),
                           onPressed: _useCurrentLocationAsStart,
                           tooltip: 'Use current location',
                         ),
                       ],
                     ),
                   ),
-
-                  // End location
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     child: Row(
                       children: [
-                        const Icon(
-                          Icons.location_on,
-                          color: Colors.red,
-                          size: 20,
-                        ),
+                        const Icon(Icons.location_on, color: Colors.red, size: 20),
                         const SizedBox(width: 8),
                         Expanded(
                           child: TextField(
                             controller: _endController,
                             decoration: InputDecoration(
-                              hintText: 'End location (Egypt only)',
+                              hintText: 'End location',
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: BorderSide.none,
                               ),
                               filled: true,
                               fillColor: Colors.grey[100],
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
-                              ),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                               isDense: true,
                             ),
-                            onSubmitted: (_) async {
-                              await _setEndPoint();
-                              if (_startPoint != null && _endPoint != null) {
-                                await _getDirections();
-                              }
-                            },
+                            onSubmitted: (_) => _setEndPoint(),
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(
-                            Icons.search,
-                            color: Colors.deepOrange,
-                          ),
-                          onPressed: () async {
-                            await _setEndPoint();
-                            if (_startPoint != null && _endPoint != null) {
-                              await _getDirections();
-                            }
-                          },
-                          tooltip: 'Search and get directions',
+                          icon: const Icon(Icons.search, color: Colors.deepOrange),
+                          onPressed: _setEndPoint,
+                          tooltip: 'Search destination',
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.directions, color: Colors.deepOrange),
+                          onPressed: _getDirections,
+                          tooltip: 'Get directions',
                         ),
                       ],
                     ),
@@ -575,35 +443,21 @@ class _MapScreenState extends State<MapScreen> {
                         children: [
                           Row(
                             children: [
-                              const Icon(
-                                Icons.straighten,
-                                size: 18,
-                                color: Colors.deepOrange,
-                              ),
+                              const Icon(Icons.straighten, size: 18, color: Colors.deepOrange),
                               const SizedBox(width: 4),
                               Text(
                                 _distance!,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.deepOrange,
-                                ),
+                                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange),
                               ),
                             ],
                           ),
                           Row(
                             children: [
-                              const Icon(
-                                Icons.access_time,
-                                size: 18,
-                                color: Colors.deepOrange,
-                              ),
+                              const Icon(Icons.access_time, size: 18, color: Colors.deepOrange),
                               const SizedBox(width: 4),
                               Text(
                                 _duration!,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.deepOrange,
-                                ),
+                                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange),
                               ),
                             ],
                           ),
@@ -648,6 +502,17 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
