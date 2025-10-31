@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:hidden_treasures/notfications/notfications_screen.dart';
 import 'package:hidden_treasures/screens/help_center_screen.dart';
 import 'package:hidden_treasures/screens/logout_screen.dart';
 import 'package:hidden_treasures/screens/myaccount_screen.dart';
-import 'package:hidden_treasures/screens/notfications_screen.dart';
+
 import 'package:hidden_treasures/screens/settings_screen.dart';
 
 class ProfileScreen extends StatelessWidget {

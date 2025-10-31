@@ -7,7 +7,7 @@ import 'package:hidden_treasures/screens/car/carRental_screen.dart';
 import 'package:hidden_treasures/screens/event/event_screen.dart';
 import 'package:hidden_treasures/screens/hotel/hotel_screen.dart';
 import 'package:hidden_treasures/screens/myaccount_screen.dart';
-import 'package:hidden_treasures/screens/notfications_screen.dart';
+import 'package:hidden_treasures/notfications/notfications_screen.dart';
 import 'package:hidden_treasures/screens/restaurant/restaurant_screen.dart';
 import 'firebase_options.dart';
 import 'package:hidden_treasures/screens/splash_screen.dart';
